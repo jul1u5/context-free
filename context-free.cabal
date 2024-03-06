@@ -1,0 +1,78 @@
+cabal-version:      3.4
+name:               context-free
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            MIT
+license-file:       LICENSE
+author:             Julius Marozas
+maintainer:         marozas.julius@gmail.com
+-- copyright:
+category:           Language
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+common warnings
+    ghc-options: -Wall
+    default-extensions:
+        StrictData,
+        PatternSynonyms,
+        DataKinds,
+        LambdaCase,
+        OverloadedRecordDot,
+        DuplicateRecordFields,
+        NoFieldSelectors,
+
+library
+    import:           warnings
+    exposed-modules:
+        ContextFree.Grammar
+        ContextFree.Grammar.Parser
+        ContextFree.Grammar.Internal
+        ContextFree.Transformations
+        Data.HashMultimap
+    other-modules:
+    build-depends:
+        base ^>=4.17.2.1,
+        text,
+        megaparsec ^>=9.6.1,
+        containers,
+        unordered-containers,
+        hashable,
+        transformers,
+
+    hs-source-dirs:   src
+    default-language: GHC2021
+
+executable context-free
+    import:           warnings
+    main-is:          Main.hs
+    -- other-modules:
+    -- other-extensions:
+    build-depends:
+        base ^>=4.17.2.1,
+        context-free,
+        text,
+        transformers,
+
+    hs-source-dirs:   app
+    default-language: GHC2021
+
+test-suite context-free-test
+    import:           warnings
+    default-language: GHC2021
+    -- other-modules:
+    -- other-extensions:
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.17.2.1,
+        context-free,
+        unordered-containers,
+        text,
+        bytestring,
+        megaparsec,
+        hspec,
+        hspec-megaparsec,
