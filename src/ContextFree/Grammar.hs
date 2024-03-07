@@ -1,19 +1,20 @@
+{-# LANGUAGE PatternSynonyms #-}
 module ContextFree.Grammar
   ( -- * Grammars
-    Grammar (Grammar, terminals, productions, start),
+    Grammar' (Grammar, terminals, productions, start, _terminals, _productions, _start),
+    Grammar,
     nonterminals,
 
     -- * Creating grammars
-    MkGrammar (..),
     mkGrammar,
     GrammarError (..),
 
     -- * Symbols
     SymbolKind (..),
-    Symbol,
+    Symbol(text),
     SomeSymbol(..),
-    -- pattern SomeTerminal,
-    -- pattern SomeNonterminal,
+    pattern SomeTerminal,
+    pattern SomeNonterminal,
   )
 where
 

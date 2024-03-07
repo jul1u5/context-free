@@ -2,7 +2,7 @@
 
 module ContextFree.Grammar.Parser (parseGrammar, grammarP) where
 
-import ContextFree.Grammar (Grammar, GrammarError (..), MkGrammar (..), mkGrammar)
+import ContextFree.Grammar (Grammar, GrammarError (..), mkGrammar)
 import Control.Applicative hiding (some)
 import Data.Char (isSpace)
 import Data.HashSet (HashSet)
@@ -35,7 +35,7 @@ grammarP = do
   productions <- productionsP nonterminals terminals
   scn
 
-  case mkGrammar MkGrammar {terminals, productions, start} of
+  case mkGrammar terminals productions start of
     Left err -> fancyFailure . Set.singleton $ ErrorCustom err
     Right grammar -> pure grammar
 

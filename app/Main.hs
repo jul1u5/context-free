@@ -1,12 +1,16 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module Main where
 
+import ContextFree.Grammar.Internal (Symbol (UnsafeMkSymbol))
 import ContextFree.Grammar.Parser qualified as CF
+import ContextFree.Parsing (cyk, showCykTable)
 import ContextFree.Transformations qualified as CF
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.State.Strict
+import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -36,10 +40,14 @@ main = do
                   ("1.4 (TERM)", CF.term)
                 ]
 
-      flip evalStateT g $ forM_ tasks $ \(title, f) -> do
+      g' <- flip execStateT g $ forM_ tasks $ \(title, f) -> do
         g' <- gets f
         put g'
         liftIO $ printTask title g'
+
+      let string = map UnsafeMkSymbol $ T.words "1 + 1 1 - 1"
+          table = cyk (CF.unsafeAsCNF g') string
+      TIO.putStrLn $ showCykTable table string
 
 printTask :: (Show a) => String -> a -> IO ()
 printTask title a = do

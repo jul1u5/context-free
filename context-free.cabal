@@ -31,6 +31,8 @@ library
         ContextFree.Grammar.Parser
         ContextFree.Grammar.Internal
         ContextFree.Transformations
+        ContextFree.Parsing
+        ContextFree.StrongEquivalence
         Data.HashMultimap
     other-modules:
     build-depends:
@@ -41,6 +43,9 @@ library
         unordered-containers,
         hashable,
         transformers,
+        logict,
+        array,
+        vector,
 
     hs-source-dirs:   src
     default-language: GHC2021
@@ -55,6 +60,7 @@ executable context-free
         context-free,
         text,
         transformers,
+        array,
 
     hs-source-dirs:   app
     default-language: GHC2021
@@ -76,3 +82,4 @@ test-suite context-free-test
         megaparsec,
         hspec,
         hspec-megaparsec,
+        array,

@@ -3,14 +3,20 @@
 
 module Main (main) where
 
-import ContextFree.Grammar.Internal (Grammar (..), MkGrammar (..), SSymbolKind (..), SomeSymbol (..), Symbol (UnsafeMkSymbol), mkGrammar)
+import ContextFree.Grammar.Internal
 import ContextFree.Grammar.Parser (grammarP)
+import ContextFree.Parsing
+import ContextFree.StrongEquivalence
 import ContextFree.Transformations
+import Data.Array qualified as Array
+import Data.Bifunctor (bimap, second)
 import Data.ByteString qualified as BS
-import Data.HashMultimap qualified as HashMultimap
-import Data.HashSet qualified as HashSet
-import Data.Text (Text)
+import Data.HashMap.Strict qualified as HM
+import Data.HashMultimap qualified as HMM
+import Data.HashSet qualified as HS
+import Data.Text (Text, singleton)
 import Data.Text.Encoding qualified as T
+import Data.Text.IO qualified as TIO
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
@@ -22,10 +28,10 @@ main = hspec $ do
 
   let parsedExample1 =
         UnsafeMkGrammar
-          { terminals = HashSet.fromList [s "+", s "-", s "1"],
-            start = s "E",
-            productions =
-              HashMultimap.fromGroupedList
+          { _terminals = HS.fromList [s "+", s "-", s "1"],
+            _start = s "E",
+            _productions =
+              HMM.fromGroupedList
                 [ (s "E", [[nt "E", nt "O", nt "E"], [nt "N"]]),
                   (s "O", [[t "+"], [t "-"], []]),
                   (s "N", [[t "1"], [t "1", nt "N"]])
@@ -42,8 +48,8 @@ main = hspec $ do
   describe "Transformations" $ do
     describe "bin" $ do
       it "works" $ do
-        binProd parsedExample1.productions
-          `shouldBe` HashMultimap.fromGroupedList
+        (bin parsedExample1)._productions
+          `shouldBe` HMM.fromGroupedList
             [ (s "E", [[nt "E", nt "E1"], [nt "N"]]),
               (s "E1", [[nt "O", nt "E"]]),
               (s "O", [[t "+"], [t "-"], []]),
@@ -55,104 +61,144 @@ main = hspec $ do
         input <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["0"],
-                  start = "S",
-                  productions =
-                    [ ("S", [["0"], ["A", "B", "S"]]),
-                      ("A", [[], ["B", "A"]]),
-                      ("B", [["S"], []])
-                    ]
-                }
+              (HS.fromList ["0"])
+              [ ("S", [["0"], ["A", "B", "S"]]),
+                ("A", [[], ["B", "A"]]),
+                ("B", [["S"], []])
+              ]
+              "S"
         output <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["0"],
-                  start = "S",
-                  productions =
-                    [ ("S", [["0"], ["A", "B", "S"], ["A", "S"], ["B", "S"], ["S"]]),
-                      ("A", [["B", "A"], ["B"], ["A"]]),
-                      ("B", [["S"]])
-                    ]
-                }
+              (HS.fromList ["0"])
+              [ ("S", [["0"], ["A", "B", "S"], ["A", "S"], ["B", "S"], ["S"]]),
+                ("A", [["B", "A"], ["B"], ["A"]]),
+                ("B", [["S"]])
+              ]
+              "S"
 
-        delProd input.productions `shouldBe` output.productions
+        del input `shouldBe` output
 
       it "produces grammar of the right size" $ do
         let n = 10
         input <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["0"],
-                  start = "S",
-                  productions =
-                    [ ("S", [concat $ replicate n ["S", "A"], []]),
-                      ("A", [["0"]])
-                    ]
-                }
+              (HS.fromList ["0"])
+              [ ("S", [concat $ replicate n ["S", "A"], []]),
+                ("A", [["0"]])
+              ]
+              "S"
 
-        let output = delProd input.productions
-        HashMultimap.size output `shouldBe` 2 ^ n + 1
+        let output = (del input)._productions
+        HMM.size output `shouldBe` 2 ^ n + 1
 
       it "works on an example from Wikipedia" $ do
         -- From https://en.wikipedia.org/wiki/Chomsky_normal_form#DEL:_Eliminate_%CE%B5-rules
         input <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["a", "b", "c"],
-                  start = "S0",
-                  productions =
-                    [ ("S0", [["A", "b", "B"], ["C"]]),
-                      ("B", [["A", "A"], ["A", "C"]]),
-                      ("C", [["b"], ["c"]]),
-                      ("A", [["a"], []])
-                    ]
-                }
+              (HS.fromList ["a", "b", "c"])
+              [ ("S0", [["A", "b", "B"], ["C"]]),
+                ("B", [["A", "A"], ["A", "C"]]),
+                ("C", [["b"], ["c"]]),
+                ("A", [["a"], []])
+              ]
+              "S0"
         expected <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["a", "b", "c"],
-                  start = "S0",
-                  productions =
-                    [ ("S0", [["A", "b", "B"], ["A", "b"], ["b", "B"], ["b"], ["C"]]),
-                      ("B", [["A", "A"], ["A"], ["A", "C"], ["C"]]),
-                      ("C", [["b"], ["c"]]),
-                      ("A", [["a"]])
-                    ]
-                }
-        delProd input.productions `shouldBe` expected.productions
+              (HS.fromList ["a", "b", "c"])
+              [ ("S0", [["A", "b", "B"], ["A", "b"], ["b", "B"], ["b"], ["C"]]),
+                ("B", [["A", "A"], ["A"], ["A", "C"], ["C"]]),
+                ("C", [["b"], ["c"]]),
+                ("A", [["a"]])
+              ]
+              "S0"
+        del input `shouldBe` expected
 
     describe "unit" $ do
       it "works on example 1" $ do
         input <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["1", "2"],
-                  start = "A",
-                  productions =
-                    [ ("A", [["1"], ["B"]]),
-                      ("B", [["2"], ["C"]]),
-                      ("C", [["A", "B"]])
-                    ]
-                }
+              (HS.fromList ["1", "2"])
+              [ ("A", [["1"], ["B"]]),
+                ("B", [["2"], ["C"]]),
+                ("C", [["A", "B"]])
+              ]
+              "A"
         expected <-
           tryRight $
             mkGrammar
-              MkGrammar
-                { terminals = HashSet.fromList ["1", "2"],
-                  start = "A",
-                  productions =
-                    [ ("A", [["1"], ["2"], ["A", "B"]]),
-                      ("B", [["2"], ["A", "B"]]),
-                      ("C", [["A", "B"]])
+              (HS.fromList ["1", "2"])
+              [ ("A", [["1"], ["2"], ["A", "B"]]),
+                ("B", [["2"], ["A", "B"]]),
+                ("C", [["A", "B"]])
+              ]
+              "A"
+        unit input `shouldBe` expected
+
+  describe "Parsing" $ do
+    describe "CYK" $ do
+      it "works on example 1" $ do
+        g <-
+          tryRight $
+            mkGrammar
+              (HS.fromList ["0", "1", "2"])
+              [ ("S", [["A", "A"]]),
+                ("A", [["A", "B"], ["0"]]),
+                ("B", [["1"], ["2"]])
+              ]
+              "S"
+
+        let w = map (s . singleton) "012"
+            table = cyk (toCNF g) w
+
+        TIO.putStrLn $ showCykTable table w
+
+        let expected =
+              Array.listArray ((1, 1), (3, 3)) (replicate (3 * 3) HS.empty)
+                Array.// do
+                  map
+                    (second $ HS.singleton . s)
+                    [ ((1, 1), "A"),
+                      ((1, 2), "B"),
+                      ((1, 3), "B"),
+                      ((2, 1), "A"),
+                      ((3, 1), "A")
                     ]
-                }
-        unitProd input.productions `shouldBe` expected.productions
+
+        table `shouldBe` expected
+
+  describe "StrongEquivalence" $ do
+    it "produces correct relabeling" $ do
+      g1 <-
+        tryRight $
+          mkGrammar
+            (HS.fromList ["a", "b"])
+            [ ("S", [["A", "B"]]),
+              ("A", [["a"], ["a", "A"]]),
+              ("B", [["b"], ["b", "B"]])
+            ]
+            "S"
+      g2 <-
+        tryRight $
+          mkGrammar
+            (HS.fromList ["a", "b"])
+            [ ("A", [["B", "C"]]),
+              ("B", [["a"], ["a", "B"]]),
+              ("C", [["b"], ["b", "C"]])
+            ]
+            "A"
+
+      let relabeling = g1 `equiv` g2
+      relabeling
+        `shouldBe` [ HM.fromList $
+                       map
+                         (bimap s s)
+                         [("S", "A"), ("A", "B"), ("B", "C")]
+                   ]
 
 tryRight :: (MonadFail m, Show a) => Either a b -> m b
 tryRight (Right x) = pure x

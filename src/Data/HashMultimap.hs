@@ -16,6 +16,7 @@ import Prelude hiding (lookup, map)
 
 newtype HashMultimap k v = HashMultimap {getHashMap :: HashMap k (HashSet v)}
   deriving newtype (Eq, Hashable)
+  deriving stock (Foldable)
 
 instance (Show k, Show v) => Show (HashMultimap k v) where
   show m = "fromList " <> show (toList m)
