@@ -53,14 +53,19 @@ library
 executable context-free
     import:           warnings
     main-is:          Main.hs
-    -- other-modules:
+    other-modules:
+        App.Options
+        App.Config
+        App.Helpers
     -- other-extensions:
     build-depends:
         base ^>=4.17.2.1,
         context-free,
         text,
+        bytestring,
         transformers,
         array,
+        optparse-applicative,
 
     hs-source-dirs:   app
     default-language: GHC2021

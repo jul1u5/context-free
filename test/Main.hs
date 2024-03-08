@@ -14,12 +14,11 @@ import Data.ByteString qualified as BS
 import Data.HashMap.Strict qualified as HM
 import Data.HashMultimap qualified as HMM
 import Data.HashSet qualified as HS
-import Data.Text (Text, singleton)
+import Data.Text (Text)
 import Data.Text.Encoding qualified as T
-import Data.Text.IO qualified as TIO
 import Test.Hspec
-import Test.Hspec.Megaparsec
-import Text.Megaparsec
+import Test.Hspec.Megaparsec (shouldParse)
+import Text.Megaparsec (parse)
 
 main :: IO ()
 main = hspec $ do
@@ -151,23 +150,23 @@ main = hspec $ do
                 ("B", [["1"], ["2"]])
               ]
               "S"
+        g' <- tryRight $ asCNF g
 
-        let w = map (s . singleton) "012"
-            table = cyk (toCNF g) w
-
-        TIO.putStrLn $ showCykTable table w
+        w <- tryRight $ tokenize g' "0 1 2"
+        let table = cyk g' w
 
         let expected =
-              Array.listArray ((1, 1), (3, 3)) (replicate (3 * 3) HS.empty)
-                Array.// do
-                  map
-                    (second $ HS.singleton . s)
-                    [ ((1, 1), "A"),
-                      ((1, 2), "B"),
-                      ((1, 3), "B"),
-                      ((2, 1), "A"),
-                      ((3, 1), "A")
-                    ]
+              CYKTable $
+                Array.listArray ((1, 1), (3, 3)) (replicate (3 * 3) HS.empty)
+                  Array.// do
+                    map
+                      (second $ HS.singleton . s)
+                      [ ((1, 1), "A"),
+                        ((1, 2), "B"),
+                        ((1, 3), "B"),
+                        ((2, 1), "A"),
+                        ((3, 1), "A")
+                      ]
 
         table `shouldBe` expected
 
@@ -208,5 +207,5 @@ s :: Text -> Symbol k
 s = UnsafeMkSymbol
 
 t, nt :: Text -> SomeSymbol
-t = SomeSymbol STerminal . s
-nt = SomeSymbol SNonterminal . s
+t = SomeTerminal . s
+nt = SomeNonterminal . s

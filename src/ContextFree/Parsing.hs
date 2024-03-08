@@ -1,6 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
-module ContextFree.Parsing where
+module ContextFree.Parsing
+  ( tokenize,
+    tokenize',
+    TokenizerError (..),
+    cyk,
+    CYKTable (..),
+    prettyCYKTable,
+  )
+where
 
 import ContextFree.Grammar
 import ContextFree.Transformations (CNF)
@@ -20,27 +30,34 @@ type Length = Int
 
 type Start = Int
 
-type CykTable = Array (Length, Start) (HashSet (Symbol 'Nonterminal))
+newtype CYKTable = CYKTable {unCYKTable :: Array (Length, Start) (HashSet (Symbol 'Nonterminal))}
+  deriving (Show, Eq)
+
+newtype TokenizerError
+  = UnknownTerminal Text
+  deriving (Show, Eq)
+
+tokenize :: Grammar' a -> Text -> Either TokenizerError [Symbol 'Terminal]
+tokenize = tokenize' . (._terminals)
+
+tokenize' :: HashSet (Symbol 'Terminal) -> Text -> Either TokenizerError [Symbol 'Terminal]
+tokenize' terminals w =
+  traverse (\t -> note (UnknownTerminal t) $ asTerminal terminals t) $
+    T.words w
+
+note :: e -> Maybe a -> Either e a
+note e = maybe (Left e) Right
 
 -- | CYK parsing algorithm
 --
 -- Note: grammar must be in Chomsky normal form.
 -- See: 'ContextFree.Transformations.chomskyNormalForm'.
-cyk :: CNF -> [Symbol 'Terminal] -> CykTable
-cyk g string = runSTArray go
+cyk :: CNF -> [Symbol 'Terminal] -> CYKTable
+cyk g string = CYKTable $ runSTArray go
   where
-    go ::
-      forall s.
-      ST
-        s
-        ( STArray
-            s
-            (Length, Start)
-            (HashSet (Symbol 'Nonterminal))
-        )
+    go :: forall s. ST s _
     go = do
-      arr :: STArray s (Length, Start) (HashSet (Symbol 'Nonterminal)) <-
-        newArray ((1, 1), (n, n)) HS.empty
+      arr :: STArray s _ _ <- newArray ((1, 1), (n, n)) HS.empty
 
       sequence_ $ do
         s <- [1 .. n]
@@ -69,22 +86,28 @@ cyk g string = runSTArray go
         w = Array.listArray (1, n) string
 
 -- | Show CYK table
-showCykTable :: CykTable -> [Symbol 'Nonterminal] -> Text
-showCykTable table w = T.unlines $ reverse $ prettyPrintTable (map (.text) w) $ do
-  l <- [1 .. n]
-  pure $ do
-    s <- [1 .. n - l + 1]
-    case HS.toList $ table Array.! (l, s) of
-      [] -> pure "∅"
-      set -> pure $ "{ " <> toText set <> " }"
+prettyCYKTable :: CYKTable -> [Symbol 'Terminal] -> Text
+prettyCYKTable (CYKTable table) w =
+  T.unlines $
+    reverse $
+      prettyTable header rows
   where
+    header = map (.text) w
+    rows = do
+      l <- [1 .. n]
+      pure $ do
+        s <- [1 .. n - l + 1]
+        pure $ case HS.toList $ table Array.! (l, s) of
+          [] -> "∅"
+          set -> "{ " <> toText set <> " }"
+
     n = length w
 
     toText :: [Symbol a] -> Text
     toText = T.unwords . map (.text)
 
-prettyPrintTable :: [Text] -> [[Text]] -> [Text]
-prettyPrintTable header table =
+prettyTable :: [Text] -> [[Text]] -> [Text]
+prettyTable header table =
   concat
     [ [T.intercalate "│" $ zipWith (`T.center` ' ') columnWidths header],
       [T.intercalate "┼" $ map (`T.replicate` "─") columnWidths],

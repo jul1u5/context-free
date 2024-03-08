@@ -7,13 +7,12 @@ import Control.Monad (join)
 import Control.Monad.Trans.State.Strict (State, evalState, runState)
 import Control.Monad.Trans.State.Strict qualified as State
 import Data.HashMap.Strict (HashMap)
-import Data.HashMap.Strict qualified as HashMap
-import Data.HashMultimap qualified as HashMultimap
+import Data.HashMap.Strict qualified as HM
+import Data.HashMultimap qualified as HMM
 import Data.HashSet (HashSet)
-import Data.HashSet qualified as HashSet
+import Data.HashSet qualified as HS
 import Data.Maybe (isNothing)
 import Data.Text qualified as T
-import GHC.Stack (HasCallStack)
 
 type CNF =
   Grammar'
@@ -23,27 +22,44 @@ type CNF =
     )
 
 toCNF :: Grammar -> CNF
-toCNF = unsafeAsCNF . unit . del . bin . term . start
+toCNF = fromRight . asCNF . unit . del . bin . term . start
+  where
+    fromRight = either (error . show) id
 
-unsafeAsCNF :: (HasCallStack) => Grammar -> CNF
-unsafeAsCNF g@Grammar {productions} =
-  g
-    { _productions =
-        HashMultimap.map
-          ( \case
-              [SomeNonterminal a, SomeNonterminal b] -> Right (a, b)
-              [SomeTerminal t] -> Left t
-              _ -> error "impossible"
-          )
-          productions
-    }
+newtype AsCNFError
+  = NonCNFRule (Symbol 'Nonterminal, [SomeSymbol])
+  deriving (Show)
+
+asCNF :: Grammar -> Either AsCNFError CNF
+asCNF g@Grammar {productions} = do
+  productions' <-
+    HMM.traverseWithKey
+      ( \lhs -> \case
+          [SomeNonterminal a, SomeNonterminal b] -> pure $ Right (a, b)
+          [SomeTerminal t] -> pure $ Left t
+          rhs -> Left $ NonCNFRule (lhs, rhs)
+      )
+      productions
+  pure $ g {_productions = productions'}
+
+fromCNF :: CNF -> Grammar
+fromCNF g@(Grammar {productions}) =
+  g {_productions = productions'}
+  where
+    productions' =
+      HMM.map
+        ( \case
+            Left t -> [SomeTerminal t]
+            Right (a, b) -> [SomeNonterminal a, SomeNonterminal b]
+        )
+        productions
 
 -- | Eliminate the start symbol from right-hand sides
 start :: Grammar -> Grammar
 start g@Grammar {productions, start = oldStart} =
   let newStart = freshSymbolFor g "S"
    in g
-        { _productions = HashMultimap.insert newStart [SomeNonterminal oldStart] productions,
+        { _productions = HMM.insert newStart [SomeNonterminal oldStart] productions,
           _start = newStart
         }
 
@@ -54,13 +70,13 @@ term :: Grammar -> Grammar
 term g@Grammar {productions} = g {_productions = additionalProds <> prods}
   where
     (prods, terminalMappings) =
-      flip runState HashMap.empty $
-        HashMultimap.traverse transform productions
+      flip runState HM.empty $
+        HMM.traverse transform productions
 
     additionalProds =
-      HashMultimap.fromList
+      HMM.fromList
         [ (nt, [SomeTerminal t])
-          | (t, nt) <- HashMap.toList terminalMappings
+          | (t, nt) <- HM.toList terminalMappings
         ]
 
     transform :: [SomeSymbol] -> TermM [SomeSymbol]
@@ -73,15 +89,15 @@ term g@Grammar {productions} = g {_productions = additionalProds <> prods}
       SomeNonterminal nt -> pure nt
       SomeTerminal t -> do
         mappings <- State.get
-        case HashMap.lookup t mappings of
+        case HM.lookup t mappings of
           Just nt -> pure nt
           Nothing -> do
             let nt =
                   freshSymbolFor'
-                    (HashSet.fromList (HashMap.elems mappings) <> nonterminals g)
+                    (HS.fromList (HM.elems mappings) <> nonterminals g)
                     g._terminals
                     $ "N" <> t.text
-            State.modify' $ HashMap.insert t nt
+            State.modify' $ HM.insert t nt
             pure nt
 
 type BinM = State (HashSet (Symbol 'Nonterminal))
@@ -91,11 +107,11 @@ bin :: Grammar -> Grammar
 bin g@Grammar {productions} = g {_productions = productions'}
   where
     productions' =
-      flip evalState HashSet.empty $
-        fmap (HashMultimap.fromList . join) $
+      flip evalState HS.empty $
+        fmap (HMM.fromList . join) $
           sequence $
             [ transform 1 lhs rhs
-              | (lhs, rhs) <- HashMultimap.toList productions
+              | (lhs, rhs) <- HMM.toList productions
             ]
     transform :: Int -> Symbol 'Nonterminal -> [SomeSymbol] -> BinM [(Symbol 'Nonterminal, [SomeSymbol])]
     transform count lhs rhs = case rhs of
@@ -105,7 +121,7 @@ bin g@Grammar {productions} = g {_productions = productions'}
       x : xs -> do
         nts <- State.get
         let !lhs' = freshSymbolFor' nts g._terminals $ lhs.text <> T.pack (show count)
-        State.modify' $ HashSet.insert lhs'
+        State.modify' $ HS.insert lhs'
 
         let !count' = succ count
         rest <- transform count' lhs' xs
@@ -117,8 +133,8 @@ del g@Grammar {productions} = g {_productions = delProd productions}
 
 delProd :: Productions [SomeSymbol] -> Productions [SomeSymbol]
 delProd productions =
-  HashMultimap.foldMapWithKey
-    (\lhs rhs -> HashMultimap.fromList $ (lhs,) <$> transform rhs)
+  HMM.foldMapWithKey
+    (\lhs rhs -> HMM.fromList $ (lhs,) <$> transform rhs)
     productions
   where
     transform :: [SomeSymbol] -> [[SomeSymbol]]
@@ -128,18 +144,18 @@ delProd productions =
       [] -> pure []
       x : xs -> case x of
         SomeNonterminal nt
-          | nt `HashSet.member` nullable productions ->
+          | nt `HS.member` nullable productions ->
               [id, (x :)] <*> propEps xs
         _ -> (x :) <$> propEps xs
 
 nullable :: Productions [SomeSymbol] -> HashSet (Symbol 'Nonterminal)
-nullable productions = fixpoint step $ HashMultimap.keysSet $ HashMultimap.filter null productions
+nullable productions = fixpoint step $ HMM.keysSet $ HMM.filter null productions
   where
     step :: HashSet (Symbol 'Nonterminal) -> HashSet (Symbol 'Nonterminal)
-    step prev = HashMultimap.keysSet $ HashMultimap.filter (all inPrev) productions
+    step prev = HMM.keysSet $ HMM.filter (all inPrev) productions
       where
         inPrev (SomeTerminal _) = False
-        inPrev (SomeNonterminal nt) = nt `HashSet.member` prev
+        inPrev (SomeNonterminal nt) = nt `HS.member` prev
 
 -- | Eliminate unit rules
 unit :: Grammar -> Grammar
@@ -147,10 +163,10 @@ unit g@Grammar {productions} = g {_productions = unitProd productions}
 
 unitProd :: Productions [SomeSymbol] -> Productions [SomeSymbol]
 unitProd productions =
-  HashMultimap.fromList
+  HMM.fromList
     [ (a, cs)
-      | (a, b) <- HashMultimap.toList unitPairs,
-        cs <- HashSet.toList $ productions HashMultimap.! b,
+      | (a, b) <- HMM.toList unitPairs,
+        cs <- HS.toList $ productions HMM.! b,
         isNothing $ asSingleNonterminal cs
     ]
   where
@@ -158,12 +174,12 @@ unitProd productions =
       [SomeNonterminal nt] -> Just nt
       _ -> Nothing
 
-    oneStepPairs = HashMultimap.mapMaybe asSingleNonterminal productions
-    nonterminals' = HashMultimap.keys productions
-    reflexive = HashMultimap.fromList $ zip nonterminals' nonterminals'
+    oneStepPairs = HMM.mapMaybe asSingleNonterminal productions
+    nonterminals' = HMM.keys productions
+    reflexive = HMM.fromList $ zip nonterminals' nonterminals'
 
-    unitPairs = fixpoint step $ oneStepPairs `HashMultimap.union` reflexive
-    step prev = prev `HashMultimap.compose` prev
+    unitPairs = fixpoint step $ oneStepPairs `HMM.union` reflexive
+    step prev = prev `HMM.compose` prev
 
 fixpoint :: (Eq a) => (a -> a) -> a -> a
 fixpoint f x

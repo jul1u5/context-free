@@ -1,99 +1,117 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
-module ContextFree.Grammar.Parser (parseGrammar, grammarP) where
+module ContextFree.Grammar.Parser (Grammar', parseGrammar, grammarP) where
 
-import ContextFree.Grammar (Grammar, GrammarError (..), mkGrammar)
-import Control.Applicative hiding (some)
+import ContextFree.Grammar
+import Control.Applicative hiding (many, some)
 import Data.Char (isSpace)
+import Data.Functor (void)
 import Data.HashSet (HashSet)
 import Data.HashSet qualified as HashSet
 import Data.Hashable (Hashable)
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
-import Text.Megaparsec hiding (many)
+import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
-import Data.Functor (void)
 
 type Parser = Parsec GrammarError Text
 
-parseGrammar :: Text -> Either String Grammar
-parseGrammar input = case parse grammarP "" input of
+parseGrammar :: FilePath -> Text -> Either String Grammar
+parseGrammar fp input = case parse grammarP fp input of
   Left e -> Left $ errorBundlePretty e
-  Right x -> Right x
+  Right PreGrammar {preTerminals, preStart, preProductions} ->
+    case mkGrammar preTerminals preProductions preStart of
+      Left err -> Left $ prettyGrammarError err
+      Right grammar -> pure grammar
 
-grammarP :: Parser Grammar
+data PreGrammar = PreGrammar
+  { preTerminals :: HashSet Text,
+    preStart :: Text,
+    preProductions :: [(Text, [[Text]])]
+  }
+
+grammarP :: Parser PreGrammar
 grammarP = do
   scn
-  nonterminals <- symbol "Nonterminals:" *> nonterminalsP
+  nts <- symbol "Nonterminals:" *> nonterminalsP
   scn
-  terminals <- symbol "Terminals:" *> terminalsP nonterminals
+  ts <- symbol "Terminals:" *> terminalsP nts
   scn
-  start <- symbol "Start:" *> startP nonterminals
+  start <- symbol "Start:" *> startP nts
   scn
-  productions <- productionsP nonterminals terminals
+  productions <- productionsP nts ts
   scn
+  eof
 
-  case mkGrammar terminals productions start of
-    Left err -> fancyFailure . Set.singleton $ ErrorCustom err
-    Right grammar -> pure grammar
+  pure $
+    PreGrammar
+      { preTerminals = ts,
+        preStart = start,
+        preProductions = productions
+      }
 
 nonterminalsP :: Parser (HashSet Text)
 nonterminalsP = toSet $ symbolP `sepByWithTry` sc
 
 terminalsP :: HashSet Text -> Parser (HashSet Text)
-terminalsP nonterminals =
+terminalsP nts =
   toSet $
-    fromSetP
+    symbolSetP
       (NonterminalsAndTerminalsNotDisjoint . HashSet.singleton)
-      (not . (`HashSet.member` nonterminals))
+      (not . (`HashSet.member` nts))
       `sepByWithTry` sc
 
 startP :: HashSet Text -> Parser Text
-startP set = fromSetP StartSymbolNotInNonterminals (`HashSet.member` set)
+startP nts = symbolSetP StartSymbolNotInNonterminals (`HashSet.member` nts)
 
 productionsP :: HashSet Text -> HashSet Text -> Parser [(Text, [[Text]])]
-productionsP nonterminals terminals = do
-  some production
-  -- TODO: Check if there are duplicate productions
-  -- TODO: Check if productions cover all non-terminals
+productionsP nts ts = withPredicate coverage $ production `sepByWithTry` scn
   where
+    -- FIXME: Maybe this check should belong somewhere else?
+    coverage (HashSet.fromList . map fst -> usedNts)
+      | unusedNts <- nts `HashSet.difference` usedNts,
+        not $ HashSet.null unusedNts =
+          Just $ NonterminalsHaveNoProductionRules unusedNts
+      | otherwise = Nothing
+    -- TODO: Check if there are duplicate productions
+
     production = do
-      sc
-      lhs <- nonterminalP nonterminals
-      sc
+      lhs <- nonterminalP nts <?> "production LHS"
       void (symbol "→" <|> symbol "->" <?> "arrow")
-      rhs <- (anySymbol `sepByWithTry` sc) `sepByWithTry` (sc *> symbol "|" <?> "or")
-      scn
+      rhs <- (anySymbol `sepBy` sc) `sepBy` (symbol "|" <?> "or") <?> "production RHS"
       pure (lhs, rhs)
-    anySymbol = fromSetP ProductionRhsNotInSymbols allSymbols
-    allSymbols s = s `HashSet.member` nonterminals || s `HashSet.member` terminals
+    anySymbol = symbolSetP ProductionRhsNotInSymbols allSymbols
+    allSymbols s = s `HashSet.member` nts || s `HashSet.member` ts
 
 nonterminalP :: HashSet Text -> Parser Text
-nonterminalP nonterminals = fromSetP ProductionLhsNotInNonterminals (`HashSet.member` nonterminals) <?> "non-terminal"
+nonterminalP nts = symbolSetP ProductionLhsNotInNonterminals (`HashSet.member` nts) <?> "non-terminal"
 
 symbolP :: Parser Text
-symbolP = takeWhile1P (Just "symbol") $ \c -> not $ isSpace c || c `elem` ['#', '|']
+symbolP = takeWhile1P (Just "symbol") (\c -> not $ isSpace c || c `elem` ['#', '|']) <* sc
 
 -- TODO: Error on duplicates
 toSet :: (Hashable a) => Parser [a] -> Parser (HashSet a)
 toSet = fmap HashSet.fromList
 
-fromSetP ::
+symbolSetP ::
+  -- | Error to produce based on the symbol
   (Text -> GrammarError) ->
+  -- | Predicate to check
   (Text -> Bool) ->
   Parser Text
-fromSetP err set = withPredicate checkInSet symbolP
+symbolSetP err set = do
+  withPredicate checkInSet symbolP
   where
     checkInSet s
       | set s = Nothing
-      | otherwise = Just . Set.singleton $ ErrorCustom $ err s
+      | otherwise = Just $ err s
 
 withPredicate ::
   (MonadParsec e s m) =>
   -- | The check to perform on parsed input
-  (a -> Maybe (Set (ErrorFancy e))) ->
+  (a -> Maybe e) ->
   -- | Parser to run
   m a ->
   -- | Resulting parser that performs the check
@@ -103,7 +121,8 @@ withPredicate f p = do
   r <- p
   case f r of
     Nothing -> pure ()
-    Just err -> registerParseError $ FancyError o err
+    Just err -> do
+      registerParseError $ FancyError o $ Set.singleton $ ErrorCustom err
   pure r
 
 lineComment :: Parser ()
@@ -113,7 +132,7 @@ scn :: Parser ()
 scn = L.space space1 lineComment empty
 
 sc :: Parser ()
-sc = L.space (void $ some (char ' ' <|> char '\t')) lineComment empty
+sc = L.space (void $ some (char ' ' <|> char '\t' <|> char '\2004')) lineComment empty
 
 symbol :: Text -> Parser Text
 symbol = L.symbol sc
@@ -123,4 +142,4 @@ sepByWithTry p sep = do
   r <- optional (try p)
   case r of
     Nothing -> pure []
-    Just x -> (x :) <$> many (try (sep >> p))
+    Just x -> (x :) <$> many (try (sep *> p))

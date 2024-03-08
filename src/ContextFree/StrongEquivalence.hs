@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module ContextFree.StrongEquivalence (equiv) where
+module ContextFree.StrongEquivalence (Relabeling, equiv, prettyRelabeling) where
 
 import ContextFree.Grammar
 import Control.Applicative (Alternative (empty), asum)
@@ -15,8 +15,18 @@ import Data.List (sort)
 import Data.List.NonEmpty (NonEmpty ((:|)), group)
 import Data.List.NonEmpty qualified as NE
 import Data.Semigroup (Arg (..))
+import Data.Text (Text)
+import Data.Text qualified as T
 
 type Relabeling = HashMap (Symbol 'Nonterminal) (Symbol 'Nonterminal)
+
+prettyRelabeling :: Relabeling -> Text
+prettyRelabeling relabeling =
+  T.unlines $
+    map
+      ( \(nt1, nt2) -> nt1.text <> " -> " <> nt2.text
+      )
+      (HM.toList relabeling)
 
 equiv :: Grammar -> Grammar -> [Relabeling]
 equiv = \g1 g2 ->
