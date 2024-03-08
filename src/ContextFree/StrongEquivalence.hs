@@ -24,7 +24,7 @@ prettyRelabeling :: Relabeling -> Text
 prettyRelabeling relabeling =
   T.unlines $
     map
-      ( \(nt1, nt2) -> nt1.text <> " -> " <> nt2.text
+      ( \(nt1, nt2) -> nt1.text <> " → " <> nt2.text
       )
       (HM.toList relabeling)
 

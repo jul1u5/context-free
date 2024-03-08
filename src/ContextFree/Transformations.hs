@@ -14,6 +14,7 @@ import Data.HashSet (HashSet)
 import Data.HashSet qualified as HS
 import Data.Maybe (isNothing)
 import Data.Text qualified as T
+import Data.Text (Text)
 
 type CNF =
   Grammar'
@@ -29,14 +30,14 @@ toCNF = fromRight . asCNF . unit . del . bin . term . start
 
 newtype AsCNFError
   = NonCNFRule (Symbol 'Nonterminal, [SomeSymbol])
-  deriving (Show)
+  deriving (Show, Eq)
 
-prettyAsCNFError :: AsCNFError -> String
+prettyAsCNFError :: AsCNFError -> Text
 prettyAsCNFError (NonCNFRule (lhs, rhs)) =
-  "Non-CNF rule: " <> T.unpack lhs.text <> " -> " <> T.unpack (T.unwords $ map (.text) rhs)
+  "Grammar is not in Chomsky normal form, because of the rule: " <> lhs.text <> " → " <> T.unwords (map (.text) rhs)
 
 instance Exception AsCNFError where
-  displayException = prettyAsCNFError
+  displayException = T.unpack . prettyAsCNFError
 
 asCNF :: Grammar -> Either AsCNFError CNF
 asCNF g@Grammar {productions} = do

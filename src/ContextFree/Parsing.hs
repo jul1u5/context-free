@@ -14,6 +14,7 @@ where
 
 import ContextFree.Grammar
 import ContextFree.Transformations (CNF)
+import Control.Exception (Exception, displayException)
 import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Data.Array (Array)
@@ -36,6 +37,13 @@ newtype CYKTable = CYKTable {unCYKTable :: Array (Length, Start) (HashSet (Symbo
 newtype TokenizerError
   = UnknownTerminal Text
   deriving (Show, Eq)
+
+prettyTokenizerError :: TokenizerError -> Text
+prettyTokenizerError = \case
+  UnknownTerminal t -> "Unknown terminal: " <> t
+
+instance Exception TokenizerError where
+  displayException = T.unpack . prettyTokenizerError
 
 tokenize :: Grammar' a -> Text -> Either TokenizerError [Symbol 'Terminal]
 tokenize = tokenize' . (.terminals)

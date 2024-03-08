@@ -44,9 +44,6 @@ pattern Grammar {terminals, productions, start} <- UnsafeMkGrammar terminals pro
 
 {-# COMPLETE Grammar #-}
 
--- instance HasField "terminals" (Grammar' f) (HashSet (Symbol 'Terminal)) where
---   getField = (._terminals)
-
 instance HasField "nonterminals" (Grammar' f) (HashSet (Symbol 'Nonterminal)) where
   getField = HashMultimap.keysSet . (.productions)
 
@@ -59,9 +56,10 @@ prettyGrammar g@Grammar {terminals, start, productions} =
     ]
       ++ map showProduction (HashMultimap.toGroupedList productions)
   where
+    longestNt = maximum $ map (T.length . (.text)) $ HashSet.toList g.nonterminals
     showProduction :: (Symbol 'Nonterminal, [[SomeSymbol]]) -> Text
     showProduction (lhs, rhss) =
-      lhs.text <> " -> " <> T.intercalate " | " (map showRhs rhss)
+      T.justifyLeft longestNt ' ' lhs.text <> " → " <> T.intercalate " | " (map showRhs rhss)
 
     showRhs rhs = T.unwords $ map showSomeSymbol rhs
 

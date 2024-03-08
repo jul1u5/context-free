@@ -25,7 +25,7 @@ main = do
     Nothing ->
       pure $ prettyGrammar grammar
     Just (Parse w) -> do
-      cnf <- tryRightShow @AsCNFError $ asCNF grammar
+      cnf <- tryRightE $ asCNF grammar
       let table = cyk cnf w
       pure $ prettyCYKTable table w
     Just (Compare otherGrammar) -> do

@@ -84,7 +84,7 @@ validate opt = do
 
   operation <- for opt.operation $ \case
     Parse s -> do
-      w <- tryRightShow @TokenizerError $ tokenize grammar s
+      w <- tryRightE @TokenizerError $ tokenize grammar s
       pure $ C.Parse w
     Compare fp -> do
       source <- T.decodeUtf8 <$> BS.readFile fp
