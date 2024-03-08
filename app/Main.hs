@@ -9,7 +9,7 @@ import ContextFree.Grammar
 import ContextFree.Parsing (cyk, prettyCYKTable)
 import ContextFree.StrongEquivalence
 import ContextFree.Transformations
-import Data.Foldable (foldl')
+import Data.Monoid (Endo (..))
 import Data.Text.IO qualified as TIO
 import System.Exit (exitFailure)
 import System.IO (stderr)
@@ -18,7 +18,8 @@ main :: IO ()
 main = do
   config <- Opt.getConfig
 
-  let grammar = foldl' (flip ($)) config.grammar $ map transformationToFn config.transformations
+  let grammar = pipeline config.grammar
+      pipeline = chain $ map transformationToFn config.transformations
 
   output <- case config.operation of
     Nothing ->
@@ -31,9 +32,12 @@ main = do
       let relabelings = equiv grammar otherGrammar
       case relabelings of
         [] -> do
-          TIO.hPutStrLn stderr "The grammars are not equivalent."
+          TIO.hPutStrLn stderr "The grammars are not strongly equivalent."
           exitFailure
         relabeling : _ ->
           pure $ prettyRelabeling relabeling
 
-  TIO.putStrLn output
+  TIO.putStr output
+
+chain :: [a -> a] -> a -> a
+chain = appEndo . mconcat . map Endo

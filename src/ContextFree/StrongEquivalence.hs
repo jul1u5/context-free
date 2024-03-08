@@ -30,9 +30,9 @@ prettyRelabeling relabeling =
 
 equiv :: Grammar -> Grammar -> [Relabeling]
 equiv = \g1 g2 ->
-  let relabeling = HM.singleton g1._start g2._start
-      unused = nonterminals g2 `HS.difference` HS.fromList (HM.elems relabeling)
-   in observeAll $ go g1 g2 g1._start relabeling unused
+  let relabeling = HM.singleton g1.start g2.start
+      unused = g2.nonterminals `HS.difference` HS.fromList (HM.elems relabeling)
+   in observeAll $ go g1 g2 g1.start relabeling unused
   where
     go ::
       Grammar ->
@@ -45,8 +45,8 @@ equiv = \g1 g2 ->
       let (outgoing1, outgoing2) =
             let nt1 = initialNt
                 nt2 = relabeling HM.! nt1
-             in ( g1._productions HMM.! nt1,
-                  g2._productions HMM.! nt2
+             in ( g1.productions HMM.! nt1,
+                  g2.productions HMM.! nt2
                 )
 
       let outgoing1Groups = groupBy length $ HS.toList outgoing1

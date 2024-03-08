@@ -19,6 +19,7 @@ import Data.List (intercalate)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Text.Megaparsec (ShowErrorComponent (..))
+import GHC.Records (HasField, getField)
 
 -- | Grammar for a context-free language
 --
@@ -28,9 +29,9 @@ import Text.Megaparsec (ShowErrorComponent (..))
 --   3. The rhs of each production is a list of symbols (non-terminals or terminals)
 --   4. The start symbol is in 'nonterminals'.
 data Grammar' f = UnsafeMkGrammar
-  { _terminals :: HashSet (Symbol 'Terminal),
-    _productions :: Productions f,
-    _start :: Symbol 'Nonterminal
+  { terminals :: HashSet (Symbol 'Terminal),
+    productions :: Productions f,
+    start :: Symbol 'Nonterminal
   }
   deriving (Show, Eq)
 
@@ -43,13 +44,16 @@ pattern Grammar {terminals, productions, start} <- UnsafeMkGrammar terminals pro
 
 {-# COMPLETE Grammar #-}
 
-nonterminals :: Grammar' f -> HashSet (Symbol 'Nonterminal)
-nonterminals = HashMultimap.keysSet . (._productions)
+-- instance HasField "terminals" (Grammar' f) (HashSet (Symbol 'Terminal)) where
+--   getField = (._terminals)
+
+instance HasField "nonterminals" (Grammar' f) (HashSet (Symbol 'Nonterminal)) where
+  getField = HashMultimap.keysSet . (.productions)
 
 prettyGrammar :: Grammar -> Text
 prettyGrammar g@Grammar {terminals, start, productions} =
   T.unlines $
-    [ "Nonterminals: " <> T.unwords (map (.text) $ HashSet.toList $ nonterminals g),
+    [ "Nonterminals: " <> T.unwords (map (.text) $ HashSet.toList g.nonterminals),
       "Terminals: " <> T.unwords (map (.text) $ HashSet.toList terminals),
       "Start: " <> start.text
     ]
@@ -98,9 +102,9 @@ mkGrammar terminals productions start
       productions' <- HashMultimap.fromGroupedList <$> traverse (uncurry checkProduction) productions
       Right $
         UnsafeMkGrammar
-          { _terminals = HashSet.map UnsafeMkSymbol terminals,
-            _productions = productions',
-            _start = UnsafeMkSymbol start
+          { terminals = HashSet.map UnsafeMkSymbol terminals,
+            productions = productions',
+            start = UnsafeMkSymbol start
           }
   where
     nts = HashSet.fromList $ map fst productions
@@ -158,8 +162,11 @@ instance Hashable SomeSymbol where
     SomeSymbol SNonterminal nt -> Left nt.text
     SomeSymbol STerminal t -> Right t.text
 
+instance HasField "text" SomeSymbol Text where
+  getField (SomeSymbol _ s) = s.text
+
 freshSymbolFor :: Grammar' f -> Text -> Symbol 'Nonterminal
-freshSymbolFor g = freshSymbolFor' (nonterminals g) g._terminals
+freshSymbolFor g = freshSymbolFor' g.nonterminals g.terminals
 
 freshSymbolFor' ::
   HashSet (Symbol 'Nonterminal) ->

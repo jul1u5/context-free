@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module ContextFree.Grammar.Parser (Grammar', parseGrammar, grammarP) where
+module ContextFree.Grammar.Parser (Grammar', parseGrammar, grammarP, PreGrammar (..)) where
 
 import ContextFree.Grammar
 import Control.Applicative hiding (many, some)
@@ -31,6 +31,7 @@ data PreGrammar = PreGrammar
     preStart :: Text,
     preProductions :: [(Text, [[Text]])]
   }
+  deriving (Show, Eq)
 
 grammarP :: Parser PreGrammar
 grammarP = do

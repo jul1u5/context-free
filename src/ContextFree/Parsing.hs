@@ -38,7 +38,7 @@ newtype TokenizerError
   deriving (Show, Eq)
 
 tokenize :: Grammar' a -> Text -> Either TokenizerError [Symbol 'Terminal]
-tokenize = tokenize' . (._terminals)
+tokenize = tokenize' . (.terminals)
 
 tokenize' :: HashSet (Symbol 'Terminal) -> Text -> Either TokenizerError [Symbol 'Terminal]
 tokenize' terminals w =
@@ -65,7 +65,7 @@ cyk g string = CYKTable $ runSTArray go
           writeArray arr (1, s) $
             HS.fromList
               [ a
-                | (a, Left t) <- HMM.toList g._productions,
+                | (a, Left t) <- HMM.toList g.productions,
                   t == w Array.! s
               ]
 
@@ -73,7 +73,7 @@ cyk g string = CYKTable $ runSTArray go
         l <- [2 .. n]
         s <- [1 .. n - l + 1]
         p <- [1 .. l - 1]
-        (a, Right (b, c)) <- HMM.toList g._productions
+        (a, Right (b, c)) <- HMM.toList g.productions
         pure $ do
           bs <- readArray arr (p, s)
           cs <- readArray arr (l - p, s + p)

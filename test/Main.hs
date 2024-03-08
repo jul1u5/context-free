@@ -4,7 +4,7 @@
 module Main (main) where
 
 import ContextFree.Grammar.Internal
-import ContextFree.Grammar.Parser (grammarP)
+import ContextFree.Grammar.Parser (PreGrammar (..), grammarP)
 import ContextFree.Parsing
 import ContextFree.StrongEquivalence
 import ContextFree.Transformations
@@ -26,10 +26,21 @@ main = hspec $ do
   example2 <- runIO $ T.decodeUtf8 <$> BS.readFile "grammars/example2.cfg"
 
   let parsedExample1 =
+        PreGrammar
+          { preTerminals = HS.fromList ["+", "-", "1"],
+            preStart = "E",
+            preProductions =
+                [ ("E", [["E", "O", "E"], ["N"]]),
+                  ("O", [["+"], ["-"], []]),
+                  ("N", [["1"], ["1", "N"]])
+                ]
+          }
+
+  let postProcessedExample =
         UnsafeMkGrammar
-          { _terminals = HS.fromList [s "+", s "-", s "1"],
-            _start = s "E",
-            _productions =
+          { terminals = HS.fromList [s "+", s "-", s "1"],
+            start = s "E",
+            productions =
               HMM.fromGroupedList
                 [ (s "E", [[nt "E", nt "O", nt "E"], [nt "N"]]),
                   (s "O", [[t "+"], [t "-"], []]),
@@ -47,7 +58,7 @@ main = hspec $ do
   describe "Transformations" $ do
     describe "bin" $ do
       it "works" $ do
-        (bin parsedExample1)._productions
+        (bin postProcessedExample).productions
           `shouldBe` HMM.fromGroupedList
             [ (s "E", [[nt "E", nt "E1"], [nt "N"]]),
               (s "E1", [[nt "O", nt "E"]]),
@@ -89,7 +100,7 @@ main = hspec $ do
               ]
               "S"
 
-        let output = (del input)._productions
+        let output = (del input).productions
         HMM.size output `shouldBe` 2 ^ n + 1
 
       it "works on an example from Wikipedia" $ do

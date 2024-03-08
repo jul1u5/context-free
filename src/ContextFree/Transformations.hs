@@ -3,6 +3,7 @@
 module ContextFree.Transformations where
 
 import ContextFree.Grammar.Internal
+import Control.Exception (Exception, displayException)
 import Control.Monad (join)
 import Control.Monad.Trans.State.Strict (State, evalState, runState)
 import Control.Monad.Trans.State.Strict qualified as State
@@ -30,6 +31,13 @@ newtype AsCNFError
   = NonCNFRule (Symbol 'Nonterminal, [SomeSymbol])
   deriving (Show)
 
+prettyAsCNFError :: AsCNFError -> String
+prettyAsCNFError (NonCNFRule (lhs, rhs)) =
+  "Non-CNF rule: " <> T.unpack lhs.text <> " -> " <> T.unpack (T.unwords $ map (.text) rhs)
+
+instance Exception AsCNFError where
+  displayException = prettyAsCNFError
+
 asCNF :: Grammar -> Either AsCNFError CNF
 asCNF g@Grammar {productions} = do
   productions' <-
@@ -40,11 +48,20 @@ asCNF g@Grammar {productions} = do
           rhs -> Left $ NonCNFRule (lhs, rhs)
       )
       productions
-  pure $ g {_productions = productions'}
+  pure $
+    UnsafeMkGrammar
+      { terminals = g.terminals,
+        productions = productions',
+        start = g.start
+      }
 
 fromCNF :: CNF -> Grammar
-fromCNF g@(Grammar {productions}) =
-  g {_productions = productions'}
+fromCNF g@Grammar {productions} =
+  UnsafeMkGrammar
+    { terminals = g.terminals,
+      productions = productions',
+      start = g.start
+    }
   where
     productions' =
       HMM.map
@@ -58,16 +75,22 @@ fromCNF g@(Grammar {productions}) =
 start :: Grammar -> Grammar
 start g@Grammar {productions, start = oldStart} =
   let newStart = freshSymbolFor g "S"
-   in g
-        { _productions = HMM.insert newStart [SomeNonterminal oldStart] productions,
-          _start = newStart
+   in UnsafeMkGrammar
+        { terminals = g.terminals,
+          productions = HMM.insert newStart [SomeNonterminal oldStart] productions,
+          start = newStart
         }
 
 type TermM = State (HashMap (Symbol 'Terminal) (Symbol 'Nonterminal))
 
 -- | Eliminate rules with nonsolitary terminals
 term :: Grammar -> Grammar
-term g@Grammar {productions} = g {_productions = additionalProds <> prods}
+term g@Grammar {productions} =
+  UnsafeMkGrammar
+    { terminals = g.terminals,
+      productions = additionalProds <> prods,
+      start = g.start
+    }
   where
     (prods, terminalMappings) =
       flip runState HM.empty $
@@ -94,8 +117,8 @@ term g@Grammar {productions} = g {_productions = additionalProds <> prods}
           Nothing -> do
             let nt =
                   freshSymbolFor'
-                    (HS.fromList (HM.elems mappings) <> nonterminals g)
-                    g._terminals
+                    (HS.fromList (HM.elems mappings) <> g.nonterminals)
+                    g.terminals
                     $ "N" <> t.text
             State.modify' $ HM.insert t nt
             pure nt
@@ -104,7 +127,12 @@ type BinM = State (HashSet (Symbol 'Nonterminal))
 
 -- | Eliminate right-hand sides with more than 2 nonterminals
 bin :: Grammar -> Grammar
-bin g@Grammar {productions} = g {_productions = productions'}
+bin g@Grammar {productions} =
+  UnsafeMkGrammar
+    { terminals = g.terminals,
+      productions = productions',
+      start = g.start
+    }
   where
     productions' =
       flip evalState HS.empty $
@@ -120,7 +148,7 @@ bin g@Grammar {productions} = g {_productions = productions'}
       [_, _] -> pure [(lhs, rhs)]
       x : xs -> do
         nts <- State.get
-        let !lhs' = freshSymbolFor' nts g._terminals $ lhs.text <> T.pack (show count)
+        let !lhs' = freshSymbolFor' nts g.terminals $ lhs.text <> T.pack (show count)
         State.modify' $ HS.insert lhs'
 
         let !count' = succ count
@@ -129,7 +157,12 @@ bin g@Grammar {productions} = g {_productions = productions'}
 
 -- | Eliminate ε-rules
 del :: Grammar -> Grammar
-del g@Grammar {productions} = g {_productions = delProd productions}
+del g =
+  UnsafeMkGrammar
+    { terminals = g.terminals,
+      productions = delProd g.productions,
+      start = g.start
+    }
 
 delProd :: Productions [SomeSymbol] -> Productions [SomeSymbol]
 delProd productions =
@@ -159,7 +192,12 @@ nullable productions = fixpoint step $ HMM.keysSet $ HMM.filter null productions
 
 -- | Eliminate unit rules
 unit :: Grammar -> Grammar
-unit g@Grammar {productions} = g {_productions = unitProd productions}
+unit g =
+  UnsafeMkGrammar
+    { terminals = g.terminals,
+      productions = unitProd g.productions,
+      start = g.start
+    }
 
 unitProd :: Productions [SomeSymbol] -> Productions [SomeSymbol]
 unitProd productions =
