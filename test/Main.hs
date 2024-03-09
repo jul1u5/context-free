@@ -4,7 +4,7 @@
 module Main (main) where
 
 import ContextFree.Grammar.Internal
-import ContextFree.Grammar.Parser (PreGrammar (..), grammarP)
+import ContextFree.Grammar.Parser (PreGrammar (..), preGrammarP, asGrammar)
 import ContextFree.Parsing
 import ContextFree.StrongEquivalence
 import ContextFree.Transformations
@@ -25,17 +25,6 @@ main = hspec $ do
   example1 <- runIO $ T.decodeUtf8 <$> BS.readFile "grammars/example1.cfg"
   example2 <- runIO $ T.decodeUtf8 <$> BS.readFile "grammars/example2.cfg"
 
-  let parsedExample1 =
-        PreGrammar
-          { preTerminals = HS.fromList ["+", "-", "1"],
-            preStart = "E",
-            preProductions =
-                [ ("E", [["E", "O", "E"], ["N"]]),
-                  ("O", [["+"], ["-"], []]),
-                  ("N", [["1"], ["1", "N"]])
-                ]
-          }
-
   let postProcessedExample =
         UnsafeMkGrammar
           { terminals = HS.fromList [s "+", s "-", s "1"],
@@ -50,10 +39,36 @@ main = hspec $ do
 
   describe "Grammar parser" $ do
     it "parses" $ do
-      parse grammarP "" example1 `shouldParse` parsedExample1
+      let parsedExample1 =
+            PreGrammar
+              { preTerminals = HS.fromList ["+", "-", "1"],
+                preStart = "E",
+                preProductions =
+                  [ ("E", [["E", "O", "E"], ["N"]]),
+                    ("O", [["+"], ["-"], []]),
+                    ("N", [["1"], ["1", "N"]])
+                  ]
+              }
+      let output = parse preGrammarP "" example1
+      output `shouldParse` parsedExample1
+      g <- tryRight $ asGrammar parsedExample1
+      g `shouldBe` postProcessedExample
 
     it "parses with comments" $ do
-      parse grammarP "" example2 `shouldParse` parsedExample1
+      let parsedExample1 =
+            PreGrammar
+              { preTerminals = HS.fromList ["+", "-", "1"],
+                preStart = "E",
+                preProductions =
+                  [ ("N", [["1", "N"], ["1"]]),
+                    ("O", [["+"], [], ["-"]]),
+                    ("E", [["N"], ["E", "O", "E"]])
+                  ]
+              }
+      let output = parse preGrammarP "" example2
+      output `shouldParse` parsedExample1
+      g <- tryRight $ asGrammar parsedExample1
+      g `shouldBe` postProcessedExample
 
   describe "Transformations" $ do
     describe "bin" $ do

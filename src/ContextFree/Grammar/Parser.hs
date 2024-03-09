@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module ContextFree.Grammar.Parser (Grammar', parseGrammar, grammarP, PreGrammar (..)) where
+module ContextFree.Grammar.Parser (Grammar', parseGrammar, preGrammarP, PreGrammar (..), asGrammar) where
 
 import ContextFree.Grammar
 import Control.Applicative hiding (many, some)
@@ -19,12 +19,11 @@ import Text.Megaparsec.Char.Lexer qualified as L
 type Parser = Parsec GrammarError Text
 
 parseGrammar :: FilePath -> Text -> Either String Grammar
-parseGrammar fp input = case parse grammarP fp input of
+parseGrammar fp input = case parse preGrammarP fp input of
   Left e -> Left $ errorBundlePretty e
-  Right PreGrammar {preTerminals, preStart, preProductions} ->
-    case mkGrammar preTerminals preProductions preStart of
-      Left err -> Left $ prettyGrammarError err
-      Right grammar -> pure grammar
+  Right pre -> case asGrammar pre of
+    Left err -> Left $ prettyGrammarError err
+    Right grammar -> pure grammar
 
 data PreGrammar = PreGrammar
   { preTerminals :: HashSet Text,
@@ -33,8 +32,14 @@ data PreGrammar = PreGrammar
   }
   deriving (Show, Eq)
 
-grammarP :: Parser PreGrammar
-grammarP = do
+asGrammar :: PreGrammar -> Either GrammarError Grammar
+asGrammar PreGrammar {preTerminals, preStart, preProductions} =
+  case mkGrammar preTerminals preProductions preStart of
+    Left err -> Left err
+    Right grammar -> pure grammar
+
+preGrammarP :: Parser PreGrammar
+preGrammarP = do
   scn
   nts <- symbol "Nonterminals:" *> nonterminalsP
   scn

@@ -12,14 +12,14 @@ module ContextFree.Grammar.Internal where
 import Data.HashMultimap (HashMultimap)
 import Data.HashMultimap qualified as HashMultimap
 import Data.HashSet (HashSet)
-import Data.HashSet qualified as HashSet
+import Data.HashSet qualified as HS
 import Data.Hashable (Hashable, hashWithSalt)
 import Data.Kind (Type)
 import Data.List (intercalate)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Text.Megaparsec (ShowErrorComponent (..))
 import GHC.Records (HasField, getField)
+import Text.Megaparsec (ShowErrorComponent (..))
 
 -- | Grammar for a context-free language
 --
@@ -50,21 +50,22 @@ instance HasField "nonterminals" (Grammar' f) (HashSet (Symbol 'Nonterminal)) wh
 prettyGrammar :: Grammar -> Text
 prettyGrammar g@Grammar {terminals, start, productions} =
   T.unlines $
-    [ "Nonterminals: " <> T.unwords (map (.text) $ HashSet.toList g.nonterminals),
-      "Terminals: " <> T.unwords (map (.text) $ HashSet.toList terminals),
+    [ "Nonterminals: " <> T.unwords (map (.text) $ HS.toList g.nonterminals),
+      "Terminals: " <> T.unwords (map (.text) $ HS.toList terminals),
       "Start: " <> start.text
     ]
       ++ map showProduction (HashMultimap.toGroupedList productions)
   where
-    longestNt = maximum $ map (T.length . (.text)) $ HashSet.toList g.nonterminals
     showProduction :: (Symbol 'Nonterminal, [[SomeSymbol]]) -> Text
     showProduction (lhs, rhss) =
-      T.justifyLeft longestNt ' ' lhs.text <> " → " <> T.intercalate " | " (map showRhs rhss)
+      T.justifyRight longestNt ' ' lhs.text <> " → " <> T.intercalate " | " (map showRhs rhss)
 
     showRhs rhs = T.unwords $ map showSomeSymbol rhs
 
     showSomeSymbol (SomeTerminal s) = s.text
     showSomeSymbol (SomeNonterminal s) = s.text
+
+    longestNt = maximum $ map (T.length . (.text)) $ HS.toList g.nonterminals
 
 data GrammarError
   = StartSymbolNotInNonterminals {start :: Text}
@@ -79,43 +80,43 @@ prettyGrammarError = \case
   StartSymbolNotInNonterminals {start} ->
     "Start symbol " <> show start <> " is not a nonterminal symbol."
   NonterminalsAndTerminalsNotDisjoint {intersection} ->
-    "Nonterminal(s) and terminal(s) are not disjoint: " <> intercalate ", " (map show $ HashSet.toList intersection)
+    "Nonterminal(s) and terminal(s) are not disjoint: " <> intercalate ", " (map show $ HS.toList intersection)
   ProductionLhsNotInNonterminals {lhs} ->
     "The symbol " <> show lhs <> " on the left-hand side of a production rule is not a nonterminal symbol."
   ProductionRhsNotInSymbols {rhs} ->
     "The symbol " <> show rhs <> " on the right-hand side of a production rule is neither terminal nor nonterminal."
   NonterminalsHaveNoProductionRules {nts} ->
-    "Nonterminal(s) " <> intercalate ", " (map show $ HashSet.toList nts) <> " have no production rules."
+    "Nonterminal(s) " <> intercalate ", " (map show $ HS.toList nts) <> " have no production rules."
 
 instance ShowErrorComponent GrammarError where
   showErrorComponent = prettyGrammarError
 
 mkGrammar :: HashSet Text -> [(Text, [[Text]])] -> Text -> Either GrammarError Grammar
 mkGrammar terminals productions start
-  | not $ start `HashSet.member` nts =
+  | not $ start `HS.member` nts =
       Left $ StartSymbolNotInNonterminals start
-  | not $ HashSet.null intersection =
+  | not $ HS.null intersection =
       Left $ NonterminalsAndTerminalsNotDisjoint intersection
   | otherwise = do
       productions' <- HashMultimap.fromGroupedList <$> traverse (uncurry checkProduction) productions
       Right $
         UnsafeMkGrammar
-          { terminals = HashSet.map UnsafeMkSymbol terminals,
+          { terminals = HS.map UnsafeMkSymbol terminals,
             productions = productions',
             start = UnsafeMkSymbol start
           }
   where
-    nts = HashSet.fromList $ map fst productions
-    intersection = nts `HashSet.intersection` terminals
+    nts = HS.fromList $ map fst productions
+    intersection = nts `HS.intersection` terminals
 
     checkProduction :: Text -> [[Text]] -> Either GrammarError (Symbol 'Nonterminal, [[SomeSymbol]])
     checkProduction lhs rhs
-      | not $ lhs `HashSet.member` nts = Left $ ProductionLhsNotInNonterminals lhs
+      | not $ lhs `HS.member` nts = Left $ ProductionLhsNotInNonterminals lhs
       | otherwise = (UnsafeMkSymbol lhs,) <$> traverse (traverse checkSymbol) rhs
 
     checkSymbol s
-      | s `HashSet.member` nts = Right $ SomeNonterminal $ UnsafeMkSymbol s
-      | s `HashSet.member` terminals = Right $ SomeTerminal $ UnsafeMkSymbol s
+      | s `HS.member` nts = Right $ SomeNonterminal $ UnsafeMkSymbol s
+      | s `HS.member` terminals = Right $ SomeTerminal $ UnsafeMkSymbol s
       | otherwise = Left $ ProductionRhsNotInSymbols s
 
 type Symbol :: SymbolKind -> Type
@@ -172,17 +173,17 @@ freshSymbolFor' ::
   Text ->
   Symbol 'Nonterminal
 freshSymbolFor' nts ts suggestion
-  | suggestion `HashSet.member` nts' || suggestion `HashSet.member` ts' =
+  | suggestion `HS.member` nts' || suggestion `HS.member` ts' =
       freshSymbolFor' nts ts (suggestion <> "'")
   | otherwise = UnsafeMkSymbol suggestion
   where
-    nts' = HashSet.map (.text) nts
-    ts' = HashSet.map (.text) ts
+    nts' = HS.map (.text) nts
+    ts' = HS.map (.text) ts
 
 asTerminal ::
   HashSet (Symbol 'Terminal) ->
   Text ->
   Maybe (Symbol 'Terminal)
 asTerminal terminals txt
-  | UnsafeMkSymbol txt `HashSet.member` terminals = Just $ UnsafeMkSymbol txt
+  | UnsafeMkSymbol txt `HS.member` terminals = Just $ UnsafeMkSymbol txt
   | otherwise = Nothing

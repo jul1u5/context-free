@@ -37,8 +37,7 @@ getConfig = validate =<< execParser opts
       info
         (optionsParser <**> helper)
         ( fullDesc
-            <> progDesc "Print a greeting for TARGET"
-            <> header "hello - a test for optparse-applicative"
+            <> header "cfg - a tool for working with context-free grammars."
         )
 
 optionsParser :: Parser Options
@@ -49,7 +48,7 @@ optionsParser = do
         long "input"
           <> short 'i'
           <> metavar "INPUT"
-          <> help "Path to a file containing context-free grammar."
+          <> help "Path to a file containing a context-free grammar."
 
   transformations <-
     fmap join $
@@ -57,8 +56,8 @@ optionsParser = do
         option transformationReader $
           long "transform"
             <> short 't'
-            <> metavar "TRANSFORMATIONS"
-            <> help "A sequence of transformations to apply (start, bin, del, unit, term, or cnf)."
+            <> metavar "TRANS"
+            <> help "Sequence of transformations to apply (start, bin, del, unit, term, or cnf)."
 
   operation <-
     optional $
@@ -69,7 +68,7 @@ optionsParser = do
                 progDesc "Parse a string using the CYK algorithm.",
             command "is-equiv" $
               info (Compare <$> strArgument (metavar "FILE")) $
-                progDesc "Check if the resulting grammar is (strongly) equivalent to a grammar in the specified file."
+                progDesc "Check if the grammar is strongly equivalent to a grammar in the specified file."
           ]
 
   pure $ Options {..}
@@ -96,7 +95,7 @@ validate opt = do
 transformationReader :: ReadM [C.Transformation]
 transformationReader = eitherReader $ \arg ->
   case R.readP_to_S (transformationsP <* R.eof) arg of
-    [] -> Left $ "Cannot parse transformations: " ++ arg
+    [] -> Left $ "Could not parse transformation: " ++ arg
     (t, _) : _ -> Right t
   where
     transformationsP =
