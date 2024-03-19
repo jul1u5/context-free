@@ -19,6 +19,8 @@ import Data.Traversable (for)
 import Options.Applicative
 import Text.ParserCombinators.ReadP qualified as R
 import Data.Maybe (fromMaybe)
+import Data.Semigroup (Last(..), sconcat)
+import Data.List.NonEmpty (nonEmpty)
 
 data OperationOpt
   = Parse Text
@@ -43,7 +45,7 @@ getConfig = validate =<< execParser opts
 optionsParser :: Parser Options
 optionsParser = do
   input <-
-    optional $
+    fmap (fmap (getLast . sconcat) . nonEmpty . map Last) $ many $
       option str $
         long "input"
           <> short 'i'

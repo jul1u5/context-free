@@ -6,6 +6,7 @@ module ContextFree.Parsing
   ( tokenize,
     tokenize',
     TokenizerError (..),
+    prettyTokenizerError,
     cyk,
     CYKTable (..),
     prettyCYKTable,
@@ -27,13 +28,6 @@ import Data.List (transpose)
 import Data.Text (Text)
 import Data.Text qualified as T
 
-type Length = Int
-
-type Start = Int
-
-newtype CYKTable = CYKTable {unCYKTable :: Array (Length, Start) (HashSet (Symbol 'Nonterminal))}
-  deriving (Show, Eq)
-
 newtype TokenizerError
   = UnknownTerminal Text
   deriving (Show, Eq)
@@ -53,8 +47,13 @@ tokenize' terminals w =
   traverse (\t -> note (UnknownTerminal t) $ asTerminal terminals t) $
     T.words w
 
-note :: e -> Maybe a -> Either e a
-note e = maybe (Left e) Right
+type Length = Int
+
+type Start = Int
+
+newtype CYKTable = CYKTable {unCYKTable :: Array (Length, Start) (HashSet (Symbol 'Nonterminal))}
+  deriving (Show, Eq)
+
 
 -- | CYK parsing algorithm
 --
@@ -123,3 +122,7 @@ prettyTable header table =
     ]
   where
     columnWidths = map ((+ 2) . maximum . map T.length) $ transpose table
+
+
+note :: e -> Maybe a -> Either e a
+note e = maybe (Left e) Right

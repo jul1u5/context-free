@@ -138,7 +138,7 @@ scn :: Parser ()
 scn = L.space space1 lineComment empty
 
 sc :: Parser ()
-sc = L.space (void $ some (char ' ' <|> char '\t' <|> char '\2004')) lineComment empty
+sc = L.space (void $ some (char ' ' <|> char '\t')) lineComment empty
 
 symbol :: Text -> Parser Text
 symbol = L.symbol sc

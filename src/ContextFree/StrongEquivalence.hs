@@ -56,6 +56,7 @@ equiv = \g1 g2 ->
 
       mforM (zip outgoing1Groups outgoing2Groups) $ \((l1, group1), (l2, group2)) -> do
         guard $ l1 == l2
+        guard $ length group1 == length group2
 
         mforM (NE.toList group1) $ \rule1 -> do
           rule2 <- choose $ NE.toList group2

@@ -15,6 +15,7 @@ import Data.HashSet qualified as HS
 import Data.Maybe (isNothing)
 import Data.Text qualified as T
 import Data.Text (Text)
+import Data.Foldable (foldl')
 
 type CNF =
   Grammar'
@@ -28,12 +29,12 @@ toCNF = fromRight . asCNF . unit . del . bin . term . start
   where
     fromRight = either (error . show) id
 
-newtype AsCNFError
-  = NonCNFRule (Symbol 'Nonterminal, [SomeSymbol])
+data AsCNFError
+  = NonCNFRule (Symbol 'Nonterminal) [SomeSymbol]
   deriving (Show, Eq)
 
 prettyAsCNFError :: AsCNFError -> Text
-prettyAsCNFError (NonCNFRule (lhs, rhs)) =
+prettyAsCNFError (NonCNFRule lhs rhs) =
   "Grammar is not in Chomsky normal form, because of the rule: " <> lhs.text <> " → " <> T.unwords (map (.text) rhs)
 
 instance Exception AsCNFError where
@@ -46,7 +47,7 @@ asCNF g@Grammar {productions} = do
       ( \lhs -> \case
           [SomeNonterminal a, SomeNonterminal b] -> pure $ Right (a, b)
           [SomeTerminal t] -> pure $ Left t
-          rhs -> Left $ NonCNFRule (lhs, rhs)
+          rhs -> Left $ NonCNFRule lhs rhs
       )
       productions
   pure $
@@ -71,6 +72,9 @@ fromCNF g@Grammar {productions} =
             Right (a, b) -> [SomeNonterminal a, SomeNonterminal b]
         )
         productions
+
+applyAll :: [Grammar -> Grammar] -> Grammar -> Grammar
+applyAll xs g = foldl' (flip ($)) g xs
 
 -- | Eliminate the start symbol from right-hand sides
 start :: Grammar -> Grammar

@@ -66,6 +66,9 @@ executable context-free
         transformers,
         array,
         optparse-applicative,
+        directory,
+        filepath,
+        megaparsec,
 
     hs-source-dirs:   app
     default-language: GHC2021
